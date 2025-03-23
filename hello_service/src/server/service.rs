@@ -1,7 +1,8 @@
 use tonic::transport::Server;
 use crate::handlers::hello::MyHelloService;
 use crate::hello::hello_service_server::HelloServiceServer;
-use crate::config::settings::AppConfig;
+use config::config::AppConfig;
+
 use std::error::Error;
 
 pub async fn run_server(config: AppConfig) -> Result<(), Box<dyn Error>> {

@@ -1,5 +1,6 @@
 [workspace]
-members = [
+members = [ "config",
     "hello_service",
-    "logger",  
+    "logger",
+    "config", 
 ]

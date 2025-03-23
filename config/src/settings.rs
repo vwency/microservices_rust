@@ -1,13 +1,6 @@
+use crate::config::AppConfig;
 use config::Config;
-use std::net::SocketAddr;
 use std::error::Error;
-
-#[derive(Debug)]
-pub struct AppConfig {
-    pub address: SocketAddr,
-    pub service_name: String,
-    pub log_level: String,
-}
 
 pub fn load_config() -> Result<AppConfig, Box<dyn Error>> {
     let settings = Config::builder()

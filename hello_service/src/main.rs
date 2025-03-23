@@ -1,9 +1,8 @@
 mod handlers;
-mod config;
 mod server;
 
+use config::{load_config, AppConfig};
 use logger::init_logger;
-use config::settings::load_config;
 use server::service::run_server;
 use std::error::Error;
 
@@ -20,5 +19,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("Сервис {} запущен на {}", config.service_name, config.address);
 
     run_server(config).await
-
 }
