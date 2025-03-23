@@ -8,6 +8,8 @@ tonic = "0.9"
 prost = "0.11"
 tokio = { version = "1", features = ["full"] }
 config = "0.14"
+log = "0.4"
+logger = { path = "../logger" }
 
 [build-dependencies]
 tonic-build = "0.9"

@@ -1,4 +1,5 @@
 [workspace]
 members = [
-    "hello_service",  # Имя вашего пакета
+    "hello_service",
+    "logger",  
 ]

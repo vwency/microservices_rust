@@ -6,6 +6,7 @@ use std::error::Error;
 pub struct AppConfig {
     pub address: SocketAddr,
     pub service_name: String,
+    pub log_level: String,
 }
 
 pub fn load_config() -> Result<AppConfig, Box<dyn Error>> {
@@ -15,6 +16,7 @@ pub fn load_config() -> Result<AppConfig, Box<dyn Error>> {
 
     let address = settings.get::<String>("server.address")?.parse()?;
     let service_name = settings.get::<String>("server.name")?;
+    let log_level = settings.get::<String>("server.log_level")?;
 
-    Ok(AppConfig { address, service_name })
+    Ok(AppConfig { address, service_name, log_level })
 }
