@@ -1,6 +1,6 @@
 [workspace]
-members = [ "config",
-    "hello_service",
-    "logger",
-    "config", 
+members = [
+    "src/hello_service",
+    "libs/config",
+    "libs/logger",
 ]
