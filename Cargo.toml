@@ -1,6 +1,6 @@
 [workspace]
 members = [
     "src/hello_service",
-    "libs/config",
-    "libs/logger",
+    "pkg/config",
+    "pkg/logger",
 ]
