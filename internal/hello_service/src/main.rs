@@ -12,11 +12,22 @@ pub mod hello {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let config = load_config()?;
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <service_name>", args[0]);
+        std::process::exit(1);
+    }
+    let service_name = &args[1];
 
-    init_logger(&config.log_level);  
+    let config = load_config(service_name)?;
 
-    log::info!("Сервис {} запущен на {}", config.service_name, config.address);
+    init_logger(&config.log_level);
+
+    log::info!(
+        "Сервис {} запущен на {}",
+        config.service_name,
+        config.address
+    );
 
     run_server(config).await
 }
