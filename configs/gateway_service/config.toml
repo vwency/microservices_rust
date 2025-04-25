@@ -1,0 +1,14 @@
+[server]
+name = "GatewayService"
+log_level = "info"
+
+# gRPC сервер (HTTP/2 + gRPC-Web)
+grpc_address = "127.0.0.1:50056" # Основной порт для gRPC
+
+# HTTP/3 сервер
+http3_address = "127.0.0.1:50057" # Дополнительный порт для HTTP/3
+
+# Настройки TLS (опционально для HTTP/3)
+[tls]
+cert_path = "certs/server.crt" # Путь к сертификату
+key_path = "certs/server.key"  # Путь к приватному ключу
