@@ -1,6 +1,6 @@
-use tonic::{Request, Response, Status};
 use crate::hello::hello_service_server::HelloService;
 use crate::hello::{HelloRequest, HelloResponse};
+use tonic::{Request, Response, Status};
 
 #[derive(Debug, Default)]
 pub struct MyHelloService {}
