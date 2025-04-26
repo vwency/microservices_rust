@@ -1,2 +1,7 @@
 [workspace]
-members = ["internal/hello_service", "pkg/config", "pkg/logger"]
+members = [
+    "internal/hello_service",
+    "pkg/config",
+    "pkg/logger",
+    "internal/gateway_service",
+]

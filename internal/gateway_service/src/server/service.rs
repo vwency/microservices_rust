@@ -1,4 +1,4 @@
-use crate::handlers::auth::AuthHandler;
+use crate::handler::auth::AuthHandler;
 use auth_service::{
     auth_service_server::AuthService, GenerateTokensRequest, GenerateTokensResponse, LoginRequest,
     LoginResponse, LogoutRequest, LogoutResponse, RefreshRequest, RefreshResponse,

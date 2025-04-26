@@ -1,67 +1,46 @@
-use auth_service::auth_service_server::AuthServiceServer;
-use config::Config;
-use http3_server::run_http3_server;
-use logger::Logger;
-use server::GatewayServer;
-use std::net::SocketAddr;
-use tonic::transport::Server;
-use tonic_web::GrpcWebLayer;
-use tower_http::cors::{Any, CorsLayer};
+mod errors;
+mod handler;
+mod http3_serve;
+mod server;
 
-mod http3_server;
+use config::{load_config, AppConfig};
+use http3_serve::http3_serve::run_http3_server;
+use logger::init_logger;
+use server::service::GatewayServer;
+use std::{error::Error, net::SocketAddr};
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Инициализация логгера и конфига
-    Logger::init("gateway_service")?;
-    let config = Config::load("gateway_service")?;
-    
-    // Создаем экземпляр нашего сервера
+async fn main() -> Result<(), Box<dyn Error>> {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <service_name>", args[0]);
+        std::process::exit(1);
+    }
+    let service_name = &args[1];
+
+    let config = load_config(service_name)?;
+
+    init_logger(&config.log_level);
+
+    log::info!(
+        "Сервис {} запущен на {}",
+        config.service_name,
+        config.address
+    );
+
     let gateway = GatewayServer::default();
 
-    // Запускаем gRPC сервер (HTTP/2)
-    let grpc_addr: SocketAddr = config.server.grpc_address.parse()?;
-    let grpc_future = {
-        let gateway = gateway.clone();
-        async move {
-            let service = AuthServiceServer::new(gateway)
-                .accept_gzip()
-                .send_gzip();
+    let http3_addr: SocketAddr = config
+        .http3_address
+        .as_ref()
+        .ok_or("HTTP/3 address not configured")?
+        .parse()
+        .map_err(|e| format!("Invalid HTTP/3 address format: {}", e))?;
 
-            Server::builder()
-                .accept_http1(true)
-                .layer(
-                    CorsLayer::new()
-                        .allow_origin(Any)
-                        .allow_methods(Any)
-                        .allow_headers(Any),
-                )
-                .layer(GrpcWebLayer::new())
-                .add_service(service)
-                .serve(grpc_addr)
-                .await
-        }
-    };
-
-    // Запускаем HTTP/3 сервер
-    let http3_addr: SocketAddr = config.server.http3_address.parse()?;
-    let http3_future = run_http3_server(http3_addr, gateway);
-
-    // Ожидаем завершения любого из серверов
-    tokio::select! {
-        res = grpc_future => {
-            res.map_err(|e| {
-                log::error!("gRPC server error: {}", e);
-                e
-            })?
-        },
-        res = http3_future => {
-            res.map_err(|e| {
-                log::error!("HTTP/3 server error: {}", e);
-                e
-            })?
-        }
-    }
+    run_http3_server(http3_addr, gateway).await.map_err(|e| {
+        log::error!("HTTP/3 server error: {}", e);
+        e
+    })?;
 
     Ok(())
 }
