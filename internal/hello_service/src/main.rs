@@ -1,7 +1,7 @@
 mod handlers;
 mod server;
 
-use config::{load_config, AppConfig};
+use config::load_config;
 use logger::init_logger;
 use server::service::run_server;
 use std::error::Error;
@@ -12,14 +12,8 @@ pub mod hello {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <service_name>", args[0]);
-        std::process::exit(1);
-    }
-    let service_name = &args[1];
-
-    let config = load_config(service_name)?;
+    // Просто указываем путь к конфигу
+    let config = load_config("hello_service")?; // <-- здесь путь к папке конфига: configs/hello_service/config.toml
 
     init_logger(&config.log_level);
 

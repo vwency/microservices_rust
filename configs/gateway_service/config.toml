@@ -1,6 +1,7 @@
 [server]
 name = "GatewayService"
 log_level = "info"
+address = "127.0.0.1:50056"  # Убедись, что это строка, которую можно разобрать в SocketAddr
 
 # gRPC сервер (HTTP/2 + gRPC-Web)
 grpc_address = "127.0.0.1:50056" # Основной порт для gRPC

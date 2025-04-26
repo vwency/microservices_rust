@@ -11,18 +11,18 @@ use config::{load_config, AppConfig};
 use http3_serve::http3_serve::run_http3_server;
 use logger::init_logger;
 use server::service::GatewayServer;
-use std::{error::Error, net::SocketAddr};
+use std::{error::Error, net::SocketAddr, sync::Arc};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <service_name>", args[0]);
-        std::process::exit(1);
-    }
-    let service_name = &args[1];
+    // Получаем имя бинарника, чтобы загрузить правильный конфиг
+    let exe_name = std::env::current_exe()?
+        .file_stem()
+        .ok_or("Failed to get executable name")?
+        .to_string_lossy()
+        .to_string();
 
-    let config = load_config(service_name)?;
+    let config = load_config(&exe_name)?; // <-- теперь грузим config по имени исполняемого файла
 
     init_logger(&config.log_level);
 
@@ -32,19 +32,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         config.address
     );
 
-    let gateway = GatewayServer::default();
+    let addr: SocketAddr = config.address;
 
-    let http3_addr: SocketAddr = config
-        .http3_address
-        .as_ref()
-        .ok_or("HTTP/3 address not configured")?
-        .parse()
-        .map_err(|e| format!("Invalid HTTP/3 address format: {}", e))?;
+    let gateway = Arc::new(GatewayServer::default());
 
-    run_http3_server(http3_addr, gateway).await.map_err(|e| {
-        log::error!("HTTP/3 server error: {}", e);
-        e
-    })?;
+    if let Err(e) = run_http3_server(addr, gateway.clone()).await {
+        log::error!("Ошибка HTTP/3 сервера: {}", e);
+        return Err(e);
+    }
 
     Ok(())
 }

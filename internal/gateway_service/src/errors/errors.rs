@@ -1,4 +1,6 @@
+use quinn::ConfigError;
 use thiserror::Error;
+use tonic::{transport, Status};
 
 #[derive(Error, Debug)]
 pub enum GatewayError {
@@ -6,20 +8,14 @@ pub enum GatewayError {
     ConfigError(String),
 
     #[error("gRPC transport error: {0}")]
-    TransportError(#[from] tonic::transport::Error),
+    TransportError(#[from] transport::Error),
 
     #[error("gRPC status error: {0}")]
-    StatusError(#[from] tonic::Status),
+    StatusError(#[from] Status),
 }
 
-impl From<config::ConfigError> for GatewayError {
-    fn from(err: config::ConfigError) -> Self {
-        GatewayError::ConfigError(err.to_string())
-    }
-}
-
-impl From<logger::LoggerError> for GatewayError {
-    fn from(err: logger::LoggerError) -> Self {
+impl From<ConfigError> for GatewayError {
+    fn from(err: ConfigError) -> Self {
         GatewayError::ConfigError(err.to_string())
     }
 }

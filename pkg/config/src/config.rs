@@ -1,12 +1,13 @@
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::net::SocketAddr;
 
-// Структуры для десериализации конфига из файла
 #[derive(Debug, Deserialize)]
 pub struct RawServerConfig {
     pub name: String,
     pub log_level: String,
-    pub address: String,
+
+    #[serde(deserialize_with = "deserialize_socket_addr")]
+    pub address: SocketAddr, // Это теперь будет десериализоваться из строки
 }
 
 #[derive(Debug, Deserialize)]
@@ -21,7 +22,6 @@ pub struct RawConfig {
     pub tls: Option<RawTlsConfig>,
 }
 
-// Финализированная структура конфига для использования в приложении
 #[derive(Debug)]
 pub struct AppConfig {
     pub address: SocketAddr,
@@ -29,4 +29,13 @@ pub struct AppConfig {
     pub log_level: String,
     pub tls_cert_path: Option<String>,
     pub tls_key_path: Option<String>,
+}
+
+// Кастомный десериализатор для преобразования строки в SocketAddr
+fn deserialize_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+    s.parse().map_err(serde::de::Error::custom)
 }

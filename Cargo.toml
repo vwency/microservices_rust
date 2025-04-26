@@ -1,7 +1,9 @@
 [workspace]
 members = [
+    "internal/gateway_service",
     "internal/hello_service",
     "pkg/config",
-    "pkg/logger",
-    "internal/gateway_service",
+    "pkg/logger"
 ]
+
+resolver = "2" 
