@@ -3,6 +3,10 @@ mod handler;
 mod http3_serve;
 mod server;
 
+pub mod auth {
+    tonic::include_proto!("auth_service");
+}
+
 use config::{load_config, AppConfig};
 use http3_serve::http3_serve::run_http3_server;
 use logger::init_logger;

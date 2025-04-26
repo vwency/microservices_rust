@@ -1,14 +1,24 @@
-use crate::handler::auth::AuthHandler;
-use auth_service::{
-    auth_service_server::AuthService, GenerateTokensRequest, GenerateTokensResponse, LoginRequest,
-    LoginResponse, LogoutRequest, LogoutResponse, RefreshRequest, RefreshResponse,
-    RegisterRequest, RegisterResponse, ValidateRequest, ValidateResponse,
+use crate::auth::{
+    auth_service_server::{AuthService, AuthServiceServer}, // Импортируем AuthServiceServer
+    GenerateTokensRequest,
+    GenerateTokensResponse,
+    LoginRequest,
+    LoginResponse,
+    LogoutRequest,
+    LogoutResponse,
+    RefreshRequest,
+    RefreshResponse,
+    RegisterRequest,
+    RegisterResponse,
+    ValidateRequest,
+    ValidateResponse,
 };
+use crate::handler::auth::AuthHandler; // Импортируем AuthHandler
 use tonic::{Request, Response, Status};
 
 #[derive(Default)]
 pub struct GatewayServer {
-    auth_handler: AuthHandler,
+    auth_handler: AuthHandler, // Используем AuthHandler здесь
 }
 
 #[tonic::async_trait]
@@ -54,4 +64,16 @@ impl AuthService for GatewayServer {
     ) -> Result<Response<GenerateTokensResponse>, Status> {
         self.auth_handler.generate_tokens(request).await
     }
+}
+
+pub async fn run_http3_server(
+    addr: std::net::SocketAddr,
+    gateway: GatewayServer,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let auth_service = AuthServiceServer::new(gateway); // Создаем сервер с помощью AuthServiceServer
+
+    // Здесь должна быть ваша реализация HTTP/3 сервера
+    // с добавлением auth_service
+
+    Ok(())
 }
