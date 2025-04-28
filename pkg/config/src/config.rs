@@ -11,6 +11,11 @@ pub struct RawServerConfig {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RawAuthServiceConfig {
+    pub address: String, // Просто строка (gRPC клиент требует String)
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RawTlsConfig {
     pub cert_path: Option<String>,
     pub key_path: Option<String>,
@@ -20,6 +25,7 @@ pub struct RawTlsConfig {
 pub struct RawConfig {
     pub server: RawServerConfig,
     pub tls: Option<RawTlsConfig>,
+    pub auth_service: RawAuthServiceConfig,  // Добавить это поле
 }
 
 #[derive(Debug)]
@@ -29,7 +35,10 @@ pub struct AppConfig {
     pub log_level: String,
     pub tls_cert_path: Option<String>,
     pub tls_key_path: Option<String>,
+    pub auth_service_address: String,  // Добавьте это поле
 }
+
+
 
 // Кастомный десериализатор для преобразования строки в SocketAddr
 fn deserialize_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>

@@ -15,14 +15,13 @@ use std::{error::Error, net::SocketAddr, sync::Arc};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Получаем имя бинарника, чтобы загрузить правильный конфиг
     let exe_name = std::env::current_exe()?
         .file_stem()
         .ok_or("Failed to get executable name")?
         .to_string_lossy()
         .to_string();
 
-    let config = load_config(&exe_name)?; // <-- теперь грузим config по имени исполняемого файла
+    let config = load_config(&exe_name)?;
 
     init_logger(&config.log_level);
 
@@ -34,7 +33,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let addr: SocketAddr = config.address;
 
-    let gateway = Arc::new(GatewayServer::default());
+    let gateway = GatewayServer::new("http://127.0.0.1:50056".to_string()).await?;
+    let gateway = Arc::new(tokio::sync::Mutex::new(gateway));
 
     if let Err(e) = run_http3_server(addr, gateway.clone()).await {
         log::error!("Ошибка HTTP/3 сервера: {}", e);

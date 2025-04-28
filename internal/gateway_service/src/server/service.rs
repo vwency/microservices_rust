@@ -1,79 +1,53 @@
 use crate::auth::{
-    auth_service_server::{AuthService, AuthServiceServer}, // Импортируем AuthServiceServer
-    GenerateTokensRequest,
-    GenerateTokensResponse,
-    LoginRequest,
-    LoginResponse,
-    LogoutRequest,
-    LogoutResponse,
-    RefreshRequest,
-    RefreshResponse,
-    RegisterRequest,
-    RegisterResponse,
-    ValidateRequest,
-    ValidateResponse,
+    auth_service_client::AuthServiceClient, // <-- КЛИЕНТ
+    GenerateTokensRequest, GenerateTokensResponse,
+    LoginRequest, LoginResponse,
+    LogoutRequest, LogoutResponse,
+    RefreshRequest, RefreshResponse,
+    RegisterRequest, RegisterResponse,
+    ValidateRequest, ValidateResponse,
 };
-use crate::handler::auth::AuthHandler; // Импортируем AuthHandler
-use tonic::{Request, Response, Status};
+use tonic::transport::Channel;
+use tonic::{Request, Response};
 
-#[derive(Default)]
+#[derive(Clone)]
 pub struct GatewayServer {
-    auth_handler: AuthHandler, // Используем AuthHandler здесь
+    client: AuthServiceClient<Channel>,
 }
 
-#[tonic::async_trait]
-impl AuthService for GatewayServer {
-    async fn login(
-        &self,
-        request: Request<LoginRequest>,
-    ) -> Result<Response<LoginResponse>, Status> {
-        self.auth_handler.login(request).await
+impl GatewayServer {
+    pub async fn new(auth_service_addr: String) -> Result<Self, Box<dyn std::error::Error>> {
+        let client = AuthServiceClient::connect(auth_service_addr).await?;
+        Ok(Self { client })
     }
 
-    async fn refresh(
-        &self,
-        request: Request<RefreshRequest>,
-    ) -> Result<Response<RefreshResponse>, Status> {
-        self.auth_handler.refresh(request).await
+    pub async fn login(&mut self, req: LoginRequest) -> Result<LoginResponse, Box<dyn std::error::Error>> {
+        let response = self.client.login(Request::new(req)).await?.into_inner();
+        Ok(response)
     }
 
-    async fn validate(
-        &self,
-        request: Request<ValidateRequest>,
-    ) -> Result<Response<ValidateResponse>, Status> {
-        self.auth_handler.validate(request).await
+    pub async fn refresh(&mut self, req: RefreshRequest) -> Result<RefreshResponse, Box<dyn std::error::Error>> {
+        let response = self.client.refresh(Request::new(req)).await?.into_inner();
+        Ok(response)
     }
 
-    async fn logout(
-        &self,
-        request: Request<LogoutRequest>,
-    ) -> Result<Response<LogoutResponse>, Status> {
-        self.auth_handler.logout(request).await
+    pub async fn validate(&mut self, req: ValidateRequest) -> Result<ValidateResponse, Box<dyn std::error::Error>> {
+        let response = self.client.validate(Request::new(req)).await?.into_inner();
+        Ok(response)
     }
 
-    async fn register(
-        &self,
-        request: Request<RegisterRequest>,
-    ) -> Result<Response<RegisterResponse>, Status> {
-        self.auth_handler.register(request).await
+    pub async fn logout(&mut self, req: LogoutRequest) -> Result<LogoutResponse, Box<dyn std::error::Error>> {
+        let response = self.client.logout(Request::new(req)).await?.into_inner();
+        Ok(response)
     }
 
-    async fn generate_tokens(
-        &self,
-        request: Request<GenerateTokensRequest>,
-    ) -> Result<Response<GenerateTokensResponse>, Status> {
-        self.auth_handler.generate_tokens(request).await
+    pub async fn register(&mut self, req: RegisterRequest) -> Result<RegisterResponse, Box<dyn std::error::Error>> {
+        let response = self.client.register(Request::new(req)).await?.into_inner();
+        Ok(response)
     }
-}
 
-pub async fn run_http3_server(
-    addr: std::net::SocketAddr,
-    gateway: GatewayServer,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let auth_service = AuthServiceServer::new(gateway); // Создаем сервер с помощью AuthServiceServer
-
-    // Здесь должна быть ваша реализация HTTP/3 сервера
-    // с добавлением auth_service
-
-    Ok(())
+    pub async fn generate_tokens(&mut self, req: GenerateTokensRequest) -> Result<GenerateTokensResponse, Box<dyn std::error::Error>> {
+        let response = self.client.generate_tokens(Request::new(req)).await?.into_inner();
+        Ok(response)
+    }
 }

@@ -1,15 +1,11 @@
 [server]
+address = "127.0.0.1:50053"  # HTTP3 Gateway слушает здесь
 name = "GatewayService"
 log_level = "info"
-address = "127.0.0.1:50056"  # Убедись, что это строка, которую можно разобрать в SocketAddr
 
-# gRPC сервер (HTTP/2 + gRPC-Web)
-grpc_address = "127.0.0.1:50056" # Основной порт для gRPC
+[auth_service]
+address = "http://127.0.0.1:50056"  # Адрес Go-сервиса
 
-# HTTP/3 сервер
-http3_address = "127.0.0.1:50057" # Дополнительный порт для HTTP/3
-
-# Настройки TLS (опционально для HTTP/3)
 [tls]
 cert_path = "certs/server.crt" # Путь к сертификату
 key_path = "certs/server.key"  # Путь к приватному ключу
