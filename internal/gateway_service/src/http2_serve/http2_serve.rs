@@ -15,11 +15,16 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tracing::error;
 use hyper_util::rt::{TokioExecutor, TokioIo};
-
+use tokio_rustls::TlsAcceptor;
 use crate::server::service::GatewayServer;
 use crate::auth::{LoginRequest, LoginResponse, RefreshRequest, RefreshResponse};
+use rustls::ServerConfig;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use std::fs::File;
+use std::io::{BufReader, BufRead};
+use rustls_pemfile::{certs, pkcs8_private_keys};
 
-// Struct definitions
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HttpLoginRequest {
     pub username: String,
@@ -42,7 +47,6 @@ pub struct HttpRefreshResponse {
     pub access_token: String,
 }
 
-// Utility functions
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
         .map_err(|never| match never {})
@@ -75,7 +79,6 @@ fn error_response(
         })
 }
 
-// GatewayHttpService implementation
 #[derive(Clone)]
 struct GatewayHttpService {
     gateway: Arc<Mutex<GatewayServer>>,
@@ -91,7 +94,6 @@ impl GatewayHttpService {
             username: req.username,
             password: req.password,
         };
-        // Ensure the login result is compatible with Box<dyn Error + Send + Sync>
         let grpc_res = gateway.login(grpc_req).await?;
         Ok(HttpLoginResponse {
             access_token: grpc_res.access_token,
@@ -158,22 +160,67 @@ impl Service<Request<Body>> for GatewayHttpService {
     }
 }
 
-// HTTP/2 server setup
+
+
+fn load_tls_config() -> Result<ServerConfig, Box<dyn Error + Send + Sync>> {
+    let cert_file = File::open("cert.pem")
+        .map_err(|e| format!("Failed to open cert.pem: {}", e))?;
+    let key_file = File::open("key.pem")
+        .map_err(|e| format!("Failed to open key.pem: {}", e))?;
+
+    let mut cert_reader = BufReader::new(cert_file);
+    let mut key_reader = BufReader::new(key_file);
+
+    let certs = certs(&mut cert_reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "Failed to parse certificate".to_string())?;
+
+    let mut keys = pkcs8_private_keys(&mut key_reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| "Failed to parse private key".to_string())?;
+
+    if keys.is_empty() {
+        return Err("No private keys found".into());
+    }
+
+    let key = PrivateKeyDer::Pkcs8(keys.remove(0));
+
+    let config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .map_err(|e| format!("Failed to create TLS config: {}", e))?;
+
+    Ok(config)
+}
+
+
 pub async fn run_http2_server(
     addr: SocketAddr,
     gateway: Arc<Mutex<GatewayServer>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
-    tracing::info!("HTTP/2 server listening on {}", addr);
+    let tls_config = tokio::task::spawn_blocking(load_tls_config).await??;
+    let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+
+    tracing::info!("HTTP/2 server with TLS listening on {}", addr);
 
     loop {
         let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
+        let acceptor = acceptor.clone();
         let service = GatewayHttpService {
             gateway: gateway.clone(),
         };
 
         tokio::spawn(async move {
+            let stream = match acceptor.accept(stream).await {
+                Ok(stream) => stream,
+                Err(e) => {
+                    error!("TLS handshake error: {}", e);
+                    return;
+                }
+            };
+
+            let io = TokioIo::new(stream);
             let conn = http2::Builder::new(TokioExecutor::new())
                 .serve_connection(io, service);
 

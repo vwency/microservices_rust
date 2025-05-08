@@ -4,13 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rustls = { version = "0.23.27", features = ["aws_lc_rs"] }
 thiserror = "1.0.63"
 log = "0.4.22"
+rustls-pemfile = "2.0"
 prost = "0.13.1"
 tonic-web = "0.12.2"
 prost-wkt-types = "0.6.0"
 quinn = "0.11.5"
-rustls = { version = "0.23.27" }
 tokio-rustls = "0.26.0"
 tracing = "0.1.40"
 rcgen = "0.13.1"

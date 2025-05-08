@@ -1,3 +1,5 @@
+cargo-features = ["edition2024"]
+
 [workspace]
 members = [
     "internal/gateway_service",
@@ -6,4 +8,20 @@ members = [
     "pkg/logger"
 ]
 
-resolver = "2" 
+resolver = "2"
+
+[profile.release]
+opt-level = 3
+debug = false
+
+[profile.dev]
+opt-level = 0
+debug = true
+split-debuginfo = '...'
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = 'unwind'
+incremental = true
+codegen-units = 256
+rpath = false
