@@ -1,5 +1,9 @@
+pub mod generated {
+    tonic::include_proto!("auth_service");
+}
+
 use crate::auth::{
-    auth_service_client::AuthServiceClient, // <-- КЛИЕНТ
+    auth_service_client::AuthServiceClient,
     GenerateTokensRequest, GenerateTokensResponse,
     LoginRequest, LoginResponse,
     LogoutRequest, LogoutResponse,

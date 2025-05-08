@@ -15,15 +15,18 @@ serde = { version = "1.0", features = ["derive"] }
 quinn = "0.10"
 rustls = { version = "0.21", features = ["dangerous_configuration"] }
 tokio-rustls = "0.24"
-serde_json = "1.0"
+serde_json = "1.0.140"
 tower = "0.4"
 tracing = "0.1"
 rcgen = "0.11"
+
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Internal dependencies
 config = { path = "../../pkg/config" }
 logger = { path = "../../pkg/logger" }
+hyper = "0.14.32"
+futures = "0.3.31"
 
 [build-dependencies]
 tonic-build = "0.9"

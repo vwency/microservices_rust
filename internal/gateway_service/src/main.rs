@@ -2,6 +2,7 @@ mod errors;
 mod handler;
 mod http3_serve;
 mod server;
+mod http2_serve;
 
 pub mod auth {
     tonic::include_proto!("auth_service");
