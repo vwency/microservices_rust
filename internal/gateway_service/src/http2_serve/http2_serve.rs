@@ -1,102 +1,182 @@
-use crate::server::service::GatewayServer;
-use hyper::{Body, Request, Response, StatusCode};
+use bytes::Bytes;
+use futures::future::BoxFuture;
+use hyper::{
+    body::Incoming as Body,
+    server::conn::http2,
+    service::Service,
+    Method, Request, Response, StatusCode,
+};
+use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tonic::body::BoxBody;
-use tower::Service;
+use tokio::sync::Mutex;
+use tracing::error;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 
-// Убедитесь, что эти структуры имеют derive
+use crate::server::service::GatewayServer;
+use crate::auth::{LoginRequest, LoginResponse, RefreshRequest, RefreshResponse};
+
+// Struct definitions
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LoginRequest {
+pub struct HttpLoginRequest {
     pub username: String,
     pub password: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RefreshRequest {
+pub struct HttpRefreshRequest {
     pub refresh_token: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LoginResponse {
-    pub token: String,
+pub struct HttpLoginResponse {
+    pub access_token: String,
     pub refresh_token: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct RefreshResponse {
-    pub token: String,
+pub struct HttpRefreshResponse {
+    pub access_token: String,
 }
 
-pub async fn run_http2_server(
-    addr: SocketAddr,
-    gateway: Arc<tokio::sync::Mutex<GatewayServer>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let listener = TcpListener::bind(addr).await?;
-    log::info!("HTTP/2 server listening on {}", addr);
-
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let gateway = Arc::clone(&gateway);
-
-        tokio::spawn(async move {
-            let service = GatewayHttpService { gateway };
-            let conn = hyper::server::conn::Http::new()
-                .serve_connection(stream, service);
-
-            if let Err(e) = conn.await {
-                log::error!("HTTP/2 connection error: {}", e);
-            }
-        });
-    }
+// Utility functions
+fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
 }
 
+fn json_response<T: Serialize>(
+    value: &T,
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, Box<dyn Error + Send + Sync + 'static>> {
+    let json = serde_json::to_vec(value)?;
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .body(full(json))?)
+}
+
+fn error_response(
+    status: StatusCode,
+    message: impl Into<String>,
+) -> Response<BoxBody<Bytes, hyper::Error>> {
+    Response::builder()
+        .status(status)
+        .header("content-type", "text/plain")
+        .body(full(message.into()))
+        .expect("Failed to build error response")
+}
+
+// GatewayHttpService implementation
 #[derive(Clone)]
 struct GatewayHttpService {
-    gateway: Arc<tokio::sync::Mutex<GatewayServer>>,
+    gateway: Arc<Mutex<GatewayServer>>,
+}
+type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
+impl GatewayHttpService {
+    async fn handle_login(
+        &self,
+        req: HttpLoginRequest,
+    ) -> Result<HttpLoginResponse, BoxError> {
+        let mut gateway = self.gateway.lock().await;
+        let grpc_req = LoginRequest {
+            username: req.username,
+            password: req.password,
+        };
+        let grpc_res = gateway.login(grpc_req).await
+            .map_err(|e| Box::new(e) as BoxError)?;  // Ensure the error implements Send + Sync
+
+        Ok(HttpLoginResponse {
+            access_token: grpc_res.access_token,
+            refresh_token: grpc_res.refresh_token,
+        })
+    }
+
+    async fn handle_refresh(
+        &self,
+        req: HttpRefreshRequest,
+    ) -> Result<HttpRefreshResponse, BoxError> {
+        let mut gateway = self.gateway.lock().await;
+        let grpc_req = RefreshRequest {
+            refresh_token: req.refresh_token,
+        };
+        let grpc_res = gateway.refresh(grpc_req).await
+            .map_err(|e| Box::new(e) as BoxError)?;  // Ensure the error implements Send + Sync
+
+        Ok(HttpRefreshResponse {
+            access_token: grpc_res.access_token,
+        })
+    }
 }
 
 impl Service<Request<Body>> for GatewayHttpService {
-    type Response = Response<BoxBody>;
-    type Error = Box<dyn std::error::Error + Send + Sync>;
-    type Future = futures::future::BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Response = Response<BoxBody<Bytes, hyper::Error>>;
+    type Error = BoxError;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
-        let gateway = Arc::clone(&self.gateway);
+    fn call(&self, req: Request<Body>) -> Self::Future {
+        let service = self.clone();
 
         Box::pin(async move {
             let (parts, body) = req.into_parts();
-            let body_bytes = hyper::body::to_bytes(body).await?;
+            let body_bytes = body
+                .collect()
+                .await
+                .map_err(|e| Box::new(e) as BoxError)?
+                .to_bytes();
 
             let response = match (parts.method, parts.uri.path()) {
-                (hyper::Method::POST, "/login") => {
-                    let request: LoginRequest = serde_json::from_slice(&body_bytes)?;
-                    let mut gateway = gateway.lock().await;
-                    let response = gateway.login(request).await?;
-                    Response::builder()
-                        .status(StatusCode::OK)
-                        .body(tonic::body::boxed(tonic::body::Full::from(serde_json::to_vec(&response)?)))
+                (Method::POST, "/login") => {
+                    match serde_json::from_slice::<HttpLoginRequest>(&body_bytes) {
+                        Ok(parsed_req) => match service.handle_login(parsed_req).await {
+                            Ok(res) => json_response(&res)?,
+                            Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+                        },
+                        Err(e) => error_response(StatusCode::BAD_REQUEST, format!("Invalid JSON: {}", e)),
+                    }
                 }
-                (hyper::Method::POST, "/refresh") => {
-                    let request: RefreshRequest = serde_json::from_slice(&body_bytes)?;
-                    let mut gateway = gateway.lock().await;
-                    let response = gateway.refresh(request).await?;
-                    Response::builder()
-                        .status(StatusCode::OK)
-                        .body(tonic::body::boxed(tonic::body::Full::from(serde_json::to_vec(&response)?)))
+                (Method::POST, "/refresh") => {
+                    match serde_json::from_slice::<HttpRefreshRequest>(&body_bytes) {
+                        Ok(parsed_req) => match service.handle_refresh(parsed_req).await {
+                            Ok(res) => json_response(&res)?,
+                            Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+                        },
+                        Err(e) => error_response(StatusCode::BAD_REQUEST, format!("Invalid JSON: {}", e)),
+                    }
                 }
-                _ => Response::builder()
-                    .status(StatusCode::NOT_FOUND)
-                    .body(tonic::body::boxed(tonic::body::Full::from("Not Found"))),
-            }?;
+                _ => error_response(StatusCode::NOT_FOUND, "Not Found"),
+            };
 
             Ok(response)
         })
+    }
+}
+
+// HTTP/2 server setup
+pub async fn run_http2_server(
+    addr: SocketAddr,
+    gateway: Arc<Mutex<GatewayServer>>,
+) -> Result<(), BoxError> {
+    let listener = TcpListener::bind(addr).await?;
+    tracing::info!("HTTP/2 server listening on {}", addr);
+
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let stream = TokioIo::new(stream);
+        let gateway = gateway.clone();
+        let service = GatewayHttpService { gateway };
+
+        tokio::spawn(async move {
+            if let Err(e) = http2::Builder::new(TokioExecutor::new())
+                .serve_connection(stream, service)
+                .await
+            {
+                error!("HTTP/2 connection error: {}", e);
+            }
+        });
     }
 }
