@@ -51,7 +51,7 @@ fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
 
 fn json_response<T: Serialize>(
     value: &T,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, Box<dyn Error + Send + Sync + 'static>> {
+) -> Result<Response<BoxBody<Bytes, hyper::Error>>, Box<dyn Error + Send + Sync>> {
     let json = serde_json::to_vec(value)?;
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -67,7 +67,12 @@ fn error_response(
         .status(status)
         .header("content-type", "text/plain")
         .body(full(message.into()))
-        .expect("Failed to build error response")
+        .unwrap_or_else(|_| {
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(full("Internal Server Error"))
+                .unwrap()
+        })
 }
 
 // GatewayHttpService implementation
@@ -75,21 +80,19 @@ fn error_response(
 struct GatewayHttpService {
     gateway: Arc<Mutex<GatewayServer>>,
 }
-type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 impl GatewayHttpService {
     async fn handle_login(
         &self,
         req: HttpLoginRequest,
-    ) -> Result<HttpLoginResponse, BoxError> {
+    ) -> Result<HttpLoginResponse, Box<dyn Error + Send + Sync>> {
         let mut gateway = self.gateway.lock().await;
         let grpc_req = LoginRequest {
             username: req.username,
             password: req.password,
         };
-        let grpc_res = gateway.login(grpc_req).await
-            .map_err(|e| Box::new(e) as BoxError)?;  // Ensure the error implements Send + Sync
-
+        // Ensure the login result is compatible with Box<dyn Error + Send + Sync>
+        let grpc_res = gateway.login(grpc_req).await?;
         Ok(HttpLoginResponse {
             access_token: grpc_res.access_token,
             refresh_token: grpc_res.refresh_token,
@@ -99,14 +102,12 @@ impl GatewayHttpService {
     async fn handle_refresh(
         &self,
         req: HttpRefreshRequest,
-    ) -> Result<HttpRefreshResponse, BoxError> {
+    ) -> Result<HttpRefreshResponse, Box<dyn Error + Send + Sync>> {
         let mut gateway = self.gateway.lock().await;
         let grpc_req = RefreshRequest {
             refresh_token: req.refresh_token,
         };
-        let grpc_res = gateway.refresh(grpc_req).await
-            .map_err(|e| Box::new(e) as BoxError)?;  // Ensure the error implements Send + Sync
-
+        let grpc_res = gateway.refresh(grpc_req).await?;
         Ok(HttpRefreshResponse {
             access_token: grpc_res.access_token,
         })
@@ -115,7 +116,7 @@ impl GatewayHttpService {
 
 impl Service<Request<Body>> for GatewayHttpService {
     type Response = Response<BoxBody<Bytes, hyper::Error>>;
-    type Error = BoxError;
+    type Error = hyper::Error;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
     fn call(&self, req: Request<Body>) -> Self::Future {
@@ -123,17 +124,17 @@ impl Service<Request<Body>> for GatewayHttpService {
 
         Box::pin(async move {
             let (parts, body) = req.into_parts();
-            let body_bytes = body
-                .collect()
-                .await
-                .map_err(|e| Box::new(e) as BoxError)?
-                .to_bytes();
+            let body_bytes = match body.collect().await {
+                Ok(collected) => collected.to_bytes(),
+                Err(e) => return Ok(error_response(StatusCode::BAD_REQUEST, e.to_string())),
+            };
 
             let response = match (parts.method, parts.uri.path()) {
                 (Method::POST, "/login") => {
                     match serde_json::from_slice::<HttpLoginRequest>(&body_bytes) {
                         Ok(parsed_req) => match service.handle_login(parsed_req).await {
-                            Ok(res) => json_response(&res)?,
+                            Ok(res) => json_response(&res)
+                                .unwrap_or_else(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
                             Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
                         },
                         Err(e) => error_response(StatusCode::BAD_REQUEST, format!("Invalid JSON: {}", e)),
@@ -142,7 +143,8 @@ impl Service<Request<Body>> for GatewayHttpService {
                 (Method::POST, "/refresh") => {
                     match serde_json::from_slice::<HttpRefreshRequest>(&body_bytes) {
                         Ok(parsed_req) => match service.handle_refresh(parsed_req).await {
-                            Ok(res) => json_response(&res)?,
+                            Ok(res) => json_response(&res)
+                                .unwrap_or_else(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
                             Err(e) => error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
                         },
                         Err(e) => error_response(StatusCode::BAD_REQUEST, format!("Invalid JSON: {}", e)),
@@ -160,21 +162,22 @@ impl Service<Request<Body>> for GatewayHttpService {
 pub async fn run_http2_server(
     addr: SocketAddr,
     gateway: Arc<Mutex<GatewayServer>>,
-) -> Result<(), BoxError> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("HTTP/2 server listening on {}", addr);
 
     loop {
         let (stream, _) = listener.accept().await?;
-        let stream = TokioIo::new(stream);
-        let gateway = gateway.clone();
-        let service = GatewayHttpService { gateway };
+        let io = TokioIo::new(stream);
+        let service = GatewayHttpService {
+            gateway: gateway.clone(),
+        };
 
         tokio::spawn(async move {
-            if let Err(e) = http2::Builder::new(TokioExecutor::new())
-                .serve_connection(stream, service)
-                .await
-            {
+            let conn = http2::Builder::new(TokioExecutor::new())
+                .serve_connection(io, service);
+
+            if let Err(e) = conn.await {
                 error!("HTTP/2 connection error: {}", e);
             }
         });

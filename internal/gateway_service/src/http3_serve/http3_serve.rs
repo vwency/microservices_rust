@@ -1,29 +1,34 @@
 use crate::server::service::GatewayServer;
-use quinn::{Endpoint, ServerConfig};
-use rustls::{Certificate, PrivateKey, ServerConfig as RustlsConfig};
-use serde::Serialize;
+use quinn::{Connection, Endpoint, ServerConfig};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use anyhow::Result;
 
 pub async fn run_http3_server(
     addr: SocketAddr,
-    gateway: Arc<tokio::sync::Mutex<GatewayServer>>, // <-- Updated to use Mutex<GatewayServer>
-) -> Result<(), Box<dyn std::error::Error>> {
+    gateway: Arc<tokio::sync::Mutex<GatewayServer>>,
+) -> Result<()> {
     // Generate a self-signed certificate (for development)
-    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
-    let cert_chain = vec![Certificate(cert.serialize_der()?)];
-    let priv_key = PrivateKey(cert.serialize_private_key_der());
+    let cert_key = rcgen::generate_simple_self_signed(vec!["localhost".into()])?;
+    let cert_chain = vec![CertificateDer::from(cert_key.cert.der().to_vec())];
+    let priv_key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(cert_key.key_pair.serialized_der().to_vec()));
 
-    // Configure TLS
-    let mut tls_config = RustlsConfig::builder()
-        .with_safe_defaults()
+    // Configure TLS with rustls 0.23.27 for QUIC
+    let mut crypto = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(cert_chain, priv_key)?;
-    tls_config.alpn_protocols = vec![b"h3".to_vec()];
+
+    // Configure ALPN for HTTP/3
+    crypto.alpn_protocols = vec![b"h3".to_vec()];
+
+    // Create QUIC-compatible server config
+    let crypto = quinn::crypto::rustls::QuicServerConfig::try_from(crypto)
+        .map_err(|e| anyhow::anyhow!("Failed to create QUIC server config: {}", e))?;
 
     // Configure Quinn
-    let mut server_config = ServerConfig::with_crypto(Arc::new(tls_config));
+    let mut server_config = ServerConfig::with_crypto(Arc::new(crypto));
     let mut transport_config = quinn::TransportConfig::default();
     transport_config.max_concurrent_uni_streams(0_u8.into());
     server_config.transport = Arc::new(transport_config);
@@ -36,7 +41,7 @@ pub async fn run_http3_server(
     loop {
         if let Some(connecting) = endpoint.accept().await {
             let conn = connecting.await?;
-            let gateway = Arc::clone(&gateway); // Safely clone Arc
+            let gateway = Arc::clone(&gateway);
 
             tokio::spawn(async move {
                 if let Err(e) = handle_http3_connection(conn, gateway).await {
@@ -48,27 +53,28 @@ pub async fn run_http3_server(
 }
 
 async fn handle_http3_connection(
-    conn: quinn::Connection,
-    gateway: Arc<tokio::sync::Mutex<GatewayServer>>, // <-- Using Mutex for GatewayServer
-) -> Result<(), Box<dyn std::error::Error>> {
+    conn: Connection,
+    gateway: Arc<tokio::sync::Mutex<GatewayServer>>,
+) -> Result<()> {
     loop {
         let (mut send_stream, mut recv_stream) = conn.accept_bi().await?;
 
-        let max_size = 64 * 1024;
-        let request_data = recv_stream.read_to_end(max_size).await?;
+        // Read request data with a reasonable size limit
+        let mut request_data = Vec::new();
+        let max_size = 1024 * 1024; // 1MB limit
+        let bytes_read = recv_stream.read_buf(&mut request_data).await?;
 
-        // You can process the request_data via the gateway
+        // Process the request via the gateway
         let response_data = {
-            // Simulate parsing the request and getting a response from the gateway
-            let gateway = gateway.lock().await; // Lock the gateway for thread-safe access
-
-            // Example response
-            // This could be a real call like `gateway.handle_request(request_data).await`
+            let gateway = gateway.lock().await;
+            // Example response - replace with actual gateway processing
             let response = "HTTP/3 response";
-            response.as_bytes().to_vec() // Return the response as a byte vector
+            response.as_bytes().to_vec()
         };
 
         send_stream.write_all(&response_data).await?;
-        send_stream.finish().await?;
+
+        // Finish the stream properly without awaiting a result
+        send_stream.finish()?;
     }
 }

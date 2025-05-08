@@ -30,7 +30,8 @@ impl GatewayServer {
         Ok(response)
     }
 
-    pub async fn refresh(&mut self, req: RefreshRequest) -> Result<RefreshResponse, Box<dyn std::error::Error>> {
+    pub async fn refresh(&mut self, req: RefreshRequest) -> Result<RefreshResponse, Box<dyn std::error::Error + Send + Sync>>
+    {
         let response = self.client.refresh(Request::new(req)).await?.into_inner();
         Ok(response)
     }
