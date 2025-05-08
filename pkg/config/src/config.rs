@@ -25,7 +25,7 @@ pub struct RawTlsConfig {
 pub struct RawConfig {
     pub server: RawServerConfig,
     pub tls: Option<RawTlsConfig>,
-    pub auth_service: RawAuthServiceConfig,  // Добавить это поле
+    pub auth_service: Option<RawAuthServiceConfig>, // Добавить это поле
 }
 
 #[derive(Debug)]
@@ -35,7 +35,7 @@ pub struct AppConfig {
     pub log_level: String,
     pub tls_cert_path: Option<String>,
     pub tls_key_path: Option<String>,
-    pub auth_service_address: String,  // Добавьте это поле
+    pub auth_service_address: Option<String>,  // Добавьте это поле
 }
 
 
