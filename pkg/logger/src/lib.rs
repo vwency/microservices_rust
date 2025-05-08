@@ -1,5 +1,5 @@
-use log::{info, LevelFilter};
 use env_logger::Builder;
+use log::{info, LevelFilter};
 use std::io::Write;
 
 pub fn init_logger(log_level: &str) {

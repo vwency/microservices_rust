@@ -39,7 +39,6 @@ pub struct AppConfig {
 }
 
 
-
 // Кастомный десериализатор для преобразования строки в SocketAddr
 fn deserialize_socket_addr<'de, D>(deserializer: D) -> Result<SocketAddr, D::Error>
 where

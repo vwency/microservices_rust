@@ -1,10 +1,10 @@
 use crate::server::service::GatewayServer;
 use quinn::{Endpoint, ServerConfig};
 use rustls::{Certificate, PrivateKey, ServerConfig as RustlsConfig};
+use serde::Serialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use serde::Serialize;
 
 pub async fn run_http3_server(
     addr: SocketAddr,
@@ -64,7 +64,7 @@ async fn handle_http3_connection(
 
             // Example response
             // This could be a real call like `gateway.handle_request(request_data).await`
-            let response = "HTTP/3 response"; 
+            let response = "HTTP/3 response";
             response.as_bytes().to_vec() // Return the response as a byte vector
         };
 

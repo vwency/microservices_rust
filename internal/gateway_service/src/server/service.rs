@@ -8,7 +8,7 @@ use crate::auth::{
     ValidateRequest, ValidateResponse,
 };
 use tonic::transport::Channel;
-use tonic::{Request, Response};
+use tonic::Request;
 
 #[derive(Clone)]
 pub struct GatewayServer {
