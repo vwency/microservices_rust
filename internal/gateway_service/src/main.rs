@@ -4,10 +4,10 @@ mod http3_serve;
 mod server;
 mod http2_serve;
 
+
 pub mod auth {
     tonic::include_proto!("auth_service");
 }
-
 use config::{load_config, AppConfig};
 use http2_serve::http2_serve::run_http2_server;
 use http3_serve::http3_serve::run_http3_server;
@@ -19,7 +19,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 enum AppError {
     Io(std::io::Error),
-    Anyhow(String),
+    Anyhow(anyhow::Error),
     Config(String),
     Gateway(String),
     Other(String),
@@ -47,7 +47,7 @@ impl From<std::io::Error> for AppError {
 
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
-        AppError::Anyhow(err.to_string())
+        AppError::Anyhow(err)
     }
 }
 
@@ -61,7 +61,7 @@ async fn main() -> Result<(), AppError> {
     // Get executable name
     let exe_name = std::env::current_exe()?
         .file_stem()
-        .ok_or_else(|| AppError::Anyhow("Failed to get executable name".to_string()))?
+        .ok_or_else(|| AppError::Anyhow(anyhow::anyhow!("Failed to get executable name").into()))?
         .to_string_lossy()
         .to_string();
 
@@ -72,10 +72,7 @@ async fn main() -> Result<(), AppError> {
     // Initialize logger
     init_logger(&config.log_level);
 
-    log::info!(
-        "Service {} started",
-        config.service_name
-    );
+    log::info!("Service {} started", config.service_name);
 
     // Define separate addresses for HTTP/2 and HTTP/3
     let http2_addr: SocketAddr = "127.0.0.1:50053"

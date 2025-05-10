@@ -787,12 +787,12 @@ dependencies = [
  "rustls-pemfile",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-rustls",
  "tokio-util",
  "tonic 0.12.3",
- "tonic-build 0.12.3",
+ "tonic-build",
  "tonic-web",
  "tower 0.5.2",
  "tracing",
@@ -913,7 +913,7 @@ dependencies = [
  "prost",
  "tokio",
  "tonic 0.13.1",
- "tonic-build 0.13.1",
+ "tonic-build",
 ]
 
 [[package]]
@@ -2398,6 +2398,7 @@ checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite",
  "tokio",
@@ -2494,20 +2495,6 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "tonic-build"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9557ce109ea773b399c9b9e5dca39294110b74f1f342cb347a80d1fce8c26a11"
-dependencies = [
- "prettyplease",
- "proc-macro2",
- "prost-build",
- "prost-types",
- "quote",
- "syn",
 ]
 
 [[package]]

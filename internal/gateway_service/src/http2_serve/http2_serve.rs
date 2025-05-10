@@ -6,20 +6,22 @@ use hyper::{
     service::Service,
     Method, Request, Response, StatusCode,
 };
+use crate::server::service::{GatewayServer, LoginRequest, LoginResponse, RefreshRequest, RefreshResponse};
 use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::fs::File;
+use std::io::{BufReader, Seek};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tracing::error;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::ServerConfig;
+use tokio_rustls::TlsAcceptor;
+use tracing::{info, error};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 
-use crate::server::service::GatewayServer;
-use crate::auth::{LoginRequest, LoginResponse, RefreshRequest, RefreshResponse};
-
-// Struct definitions
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HttpLoginRequest {
     pub username: String,
@@ -42,10 +44,9 @@ pub struct HttpRefreshResponse {
     pub access_token: String,
 }
 
-// Utility functions
 fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
     Full::new(chunk.into())
-        .map_err(|never| match never {})
+        .map_err(|never| match never {} )
         .boxed()
 }
 
@@ -75,7 +76,6 @@ fn error_response(
         })
 }
 
-// GatewayHttpService implementation
 #[derive(Clone)]
 struct GatewayHttpService {
     gateway: Arc<Mutex<GatewayServer>>,
@@ -91,7 +91,6 @@ impl GatewayHttpService {
             username: req.username,
             password: req.password,
         };
-        // Ensure the login result is compatible with Box<dyn Error + Send + Sync>
         let grpc_res = gateway.login(grpc_req).await?;
         Ok(HttpLoginResponse {
             access_token: grpc_res.access_token,
@@ -121,7 +120,6 @@ impl Service<Request<Body>> for GatewayHttpService {
 
     fn call(&self, req: Request<Body>) -> Self::Future {
         let service = self.clone();
-
         Box::pin(async move {
             let (parts, body) = req.into_parts();
             let body_bytes = match body.collect().await {
@@ -158,27 +156,77 @@ impl Service<Request<Body>> for GatewayHttpService {
     }
 }
 
-// HTTP/2 server setup
+fn load_certs(path: &str) -> Result<Vec<CertificateDer<'static>>, Box<dyn Error + Send + Sync>> {
+    let certfile = File::open(path)?;
+    let mut reader = BufReader::new(certfile);
+    let certs = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(CertificateDer::from)
+        .collect();
+    Ok(certs)
+}
+
+fn load_key(path: &str) -> Result<PrivateKeyDer<'static>, Box<dyn Error + Send + Sync>> {
+    let keyfile = File::open(path)?;
+    let mut reader = BufReader::new(keyfile);
+
+    // Try PKCS8 first
+    let keys = rustls_pemfile::pkcs8_private_keys(&mut reader).collect::<Result<Vec<_>, _>>()?;
+    if let Some(key) = keys.into_iter().next() {
+        return Ok(PrivateKeyDer::from(key));
+    }
+
+    // If no PKCS8 key found, try RSA
+    reader.rewind()?;
+    let keys = rustls_pemfile::rsa_private_keys(&mut reader).collect::<Result<Vec<_>, _>>()?;
+    if let Some(key) = keys.into_iter().next() {
+        return Ok(PrivateKeyDer::from(key));
+    }
+
+    Err("No private keys found.".into())
+}
+
 pub async fn run_http2_server(
     addr: SocketAddr,
     gateway: Arc<Mutex<GatewayServer>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let certs = load_certs("certs/server.crt")?;
+    let key = load_key("certs/server.key")?;
+
+    let mut config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)?;
+
+    config.alpn_protocols = vec![b"h2".to_vec()];
+
+    let tls_acceptor = TlsAcceptor::from(Arc::new(config));
     let listener = TcpListener::bind(addr).await?;
-    tracing::info!("HTTP/2 server listening on {}", addr);
+    info!("HTTPS/2 server with TLS listening on {}", addr);
 
     loop {
-        let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
+        let (tcp_stream, _) = listener.accept().await?;
+        let acceptor = tls_acceptor.clone();
         let service = GatewayHttpService {
             gateway: gateway.clone(),
         };
 
         tokio::spawn(async move {
-            let conn = http2::Builder::new(TokioExecutor::new())
-                .serve_connection(io, service);
+            match acceptor.accept(tcp_stream).await {
+                Ok(tls_stream) => {
+                    info!("Accepted new HTTPS/2 connection");
+                    let io = TokioIo::new(tls_stream);
 
-            if let Err(e) = conn.await {
-                error!("HTTP/2 connection error: {}", e);
+                    let conn = http2::Builder::new(TokioExecutor::new())
+                        .serve_connection(io, service);
+
+                    if let Err(e) = conn.await {
+                        error!("HTTP/2 connection error: {}", e);
+                    }
+                }
+                Err(e) => {
+                    error!("TLS handshake failed: {}", e);
+                }
             }
         });
     }
