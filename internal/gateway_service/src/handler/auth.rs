@@ -1,12 +1,70 @@
-use crate::auth::{
-    auth_service_server::AuthService, GenerateTokensRequest, GenerateTokensResponse, LoginRequest,
-    LoginResponse, LogoutRequest, LogoutResponse, RefreshRequest, RefreshResponse, RegisterRequest,
-    RegisterResponse, ValidateRequest, ValidateResponse,
-};
 use tonic::{Request, Response, Status};
 
 #[derive(Debug, Default)]
 pub struct AuthHandler;
+
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
+}
+
+pub struct LoginResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: i64,
+}
+
+pub struct RefreshRequest {
+    pub refresh_token: String,
+}
+
+pub struct RefreshResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: i64,
+}
+
+// Define other request/response structs as needed
+pub struct GenerateTokensRequest {
+    pub refresh_token: String,
+}
+
+pub struct GenerateTokensResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: i64,
+}
+
+pub struct ValidateRequest {
+    pub token: String,
+}
+
+pub struct ValidateResponse {
+    pub valid: bool,
+    pub user_id: String,
+    pub roles: Vec<String>,
+    pub expires_at: i64,
+}
+
+pub struct LogoutRequest {
+    pub token: String,
+}
+
+pub struct LogoutResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+pub struct RegisterRequest {
+    pub username: String,
+    pub password: String,
+}
+
+pub struct RegisterResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub expires_at: i64,
+}
 
 #[tonic::async_trait]
 impl AuthService for AuthHandler {

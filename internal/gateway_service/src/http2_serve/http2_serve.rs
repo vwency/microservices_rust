@@ -1,28 +1,28 @@
+use crate::auth::{LoginRequest, LoginResponse, RefreshRequest, RefreshResponse};
+use crate::server::service::GatewayServer;
 use bytes::Bytes;
 use futures::future::BoxFuture;
+use http_body_util::{combinators::BoxBody, BodyExt, Full};
 use hyper::{
     body::Incoming as Body,
     server::conn::http2,
     service::Service,
     Method, Request, Response, StatusCode,
 };
-use http_body_util::{combinators::BoxBody, BodyExt, Full};
+use hyper_util::rt::{TokioExecutor, TokioIo};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::ServerConfig;
+use rustls_pemfile::{certs, pkcs8_private_keys};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-use tracing::error;
-use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio_rustls::TlsAcceptor;
-use crate::server::service::GatewayServer;
-use crate::auth::{LoginRequest, LoginResponse, RefreshRequest, RefreshResponse};
-use rustls::ServerConfig;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use std::fs::File;
-use std::io::{BufReader, BufRead};
-use rustls_pemfile::{certs, pkcs8_private_keys};
+use tracing::error;
 
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -159,7 +159,6 @@ impl Service<Request<Body>> for GatewayHttpService {
         })
     }
 }
-
 
 
 fn load_tls_config() -> Result<ServerConfig, Box<dyn Error + Send + Sync>> {

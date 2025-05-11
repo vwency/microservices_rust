@@ -77,7 +77,6 @@ async fn main() -> Result<(), AppError> {
         config.service_name
     );
 
-    // Define separate addresses for HTTP/2 and HTTP/3
     let http2_addr: SocketAddr = "127.0.0.1:50053"
         .parse()
         .map_err(|e| AppError::Other(format!("Failed to parse HTTP/2 address: {}", e)))?;
